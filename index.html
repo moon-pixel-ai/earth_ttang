@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>지구 과학 탐험: 30초 서바이벌 EX+ FINAL (Dev Mode)</title>
+    <style>
+        :root {
+            --primary: #4caf50;
+            --danger: #f44336;
+            --accent: #ffeb3b;
+            --sky: #2980b9;
+        }
+        body {
+            margin: 0; padding: 0;
+            background-color: #000;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            overflow: hidden;
+            color: white;
+            touch-action: none;
+            user-select: none;
+        }
+        #game-wrapper {
+            position: relative;
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+        }
+        canvas {
+            background: radial-gradient(circle, #1a2a3a 0%, #000000 100%);
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            max-width: 100%; max-height: 100%;
+        }
+        /* UI Layer */
+        #ui-layer {
+            position: absolute; top: 20px; left: 50%;
+            transform: translateX(-50%);
+            width: 90%; pointer-events: none;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 10px; z-index: 10;
+        }
+        .top-row { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+        #timer-display {
+            font-size: 32px; color: var(--accent);
+            text-shadow: 0 0 10px rgba(255, 235, 59, 0.5);
+            font-weight: 900;
+        }
+        .hp-bar-outer {
+            width: 150px; height: 12px;
+            background: #333; border: 2px solid #fff;
+            border-radius: 6px; overflow: hidden;
+        }
+        #hp-bar-inner {
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, #ff4d4d, #ff0000);
+            transition: width 0.2s;
+        }
+        .exp-row { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+        #exp-bar-inner { width: 0%; height: 100%; background: var(--sky); transition: width 0.3s; }
+
+        /* Boss HP UI */
+        #boss-ui {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 85%; display: none; flex-direction: column; align-items: center;
+        }
+        #boss-hp-outer { width: 100%; height: 24px; background: #222; border: 2px solid #ff4757; border-radius: 12px; overflow: hidden; box-shadow: 0 0 15px rgba(255, 71, 87, 0.5); }
+        #boss-hp-inner { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4757, #ff6b81); transition: width 0.1s; }
+
+        /* Modal Styles */
+        #modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 85%; max-width: 420px;
+            background: rgba(10, 10, 10, 0.98);
+            padding: 30px; border: 4px solid var(--primary); border-radius: 25px;
+            display: none; z-index: 100; text-align: center;
+            box-shadow: 0 0 100px rgba(0,0,0,1);
+        }
+        .option-btn {
+            display: block; width: 100%; padding: 18px; margin: 12px 0;
+            background: #252525; color: white; border: 2px solid #444;
+            border-radius: 12px; cursor: pointer; font-size: 17px; font-weight: bold;
+            transition: all 0.2s;
+        }
+        .option-btn:hover { border-color: var(--primary); background: #333; }
+        .option-btn:active { transform: scale(0.95); background: var(--primary); }
+
+        /* Overlays */
+        #start-screen, #clear-screen, #fail-screen, #dev-screen {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.95);
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200;
+        }
+        #fail-screen, #dev-screen { display: none; }
+        #dev-screen { z-index: 300; } /* 개발자 화면은 가장 위에 */
+        
+        .play-btn {
+            padding: 22px 60px; font-size: 26px; background: var(--primary);
+            border: none; border-radius: 50px; color: white; cursor: pointer;
+            font-weight: 900; box-shadow: 0 10px 20px rgba(76, 175, 80, 0.3);
+            transition: transform 0.2s; margin-top: 10px;
+        }
+        .play-btn.retry-btn { background: #e67e22; }
+        .play-btn:hover { transform: scale(1.05); }
+
+        /* Joystick */
+        #joystick-container {
+            position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+            width: 140px; height: 140px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%; display: none;
+        }
+        #joystick-stick {
+            position: absolute; top: 45px; left: 45px; width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.3); border-radius: 50%;
+            box-shadow: 0 0 15px rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div class="top-row">
+            <div>스테이지 <span id="stage-num" style="color:var(--primary)">1</span></div>
+            <div id="timer-display">30.0</div>
+            <div>Lv. <span id="lv-num" style="color:var(--accent)">1</span></div>
+        </div>
+        <div class="hp-bar-outer"><div id="hp-bar-inner"></div></div>
+        <div class="exp-row"><div id="exp-bar-inner"></div></div>
+    </div>
+
+    <div id="boss-ui">
+        <div id="boss-name" style="margin-bottom: 5px; font-weight: bold; color: #ff4757; text-shadow: 0 0 5px #000;">보스</div>
+        <div id="boss-hp-outer"><div id="boss-hp-inner"></div></div>
+    </div>
+
+    <div id="modal">
+        <h2 id="modal-title" style="color: var(--accent); margin-top:0;">능력 선택</h2>
+        <p id="modal-desc">정답입니다!</p>
+        <div id="modal-options"></div>
+    </div>
+
+    <div id="fail-screen">
+        <h1 style="font-size: 48px; color: var(--danger); margin-bottom: 10px;">방어 실패!</h1>
+        <p id="fail-msg" style="color: #ccc; margin-bottom: 30px;">지구가 위험에 처했습니다.</p>
+        <div id="fail-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+            <button id="boss-retry-btn" class="play-btn retry-btn" onclick="startRetryQuiz()">부활 퀴즈 도전</button>
+            <button class="play-btn" onclick="location.reload()">처음부터 다시 시작</button>
+        </div>
+    </div>
+
+    <div id="clear-screen" style="display: none;">
+        <h1 style="font-size: 48px; color: var(--primary); margin-bottom: 10px;">STAGE CLEAR!</h1>
+        <p id="clear-status-msg" style="color: #ccc; margin-bottom: 5px;">방어 성공!</p>
+        <p id="clear-heal-msg" style="color: var(--accent); margin-bottom: 30px; font-weight:bold;"></p>
+        <button class="play-btn" onclick="goToNextStage()">다음 지역 진입</button>
+    </div>
+
+    <!-- 개발자 모드 화면 -->
+    <div id="dev-screen">
+        <h2 style="color: var(--accent); font-size: 36px; margin-bottom: 20px;">🛠 개발자 모드 (테스트용)</h2>
+        <div style="margin: 10px 0;">
+            <label style="font-size: 20px;">이동할 스테이지 (1~20): </label>
+            <input type="number" id="dev-stage" value="11" min="1" max="20" style="width: 70px; font-size: 20px; text-align: center; background: #333; color: #fff; border: 2px solid var(--primary); border-radius: 8px; padding: 5px;">
+        </div>
+        <div style="margin: 10px 0;">
+            <label style="font-size: 20px;">플레이어 레벨 (1~50): </label>
+            <input type="number" id="dev-lv" value="15" min="1" max="50" style="width: 70px; font-size: 20px; text-align: center; background: #333; color: #fff; border: 2px solid var(--primary); border-radius: 8px; padding: 5px;">
+        </div>
+        <p style="color: #aaa; font-size: 15px; margin-bottom: 40px; max-width: 80%; text-align: center;">
+            ※ 입력한 레벨에 비례하여 <b>체력, 공격력, 다중 사격</b> 등이 자동 보정되어 생존이 가능하도록 세팅됩니다.<br>
+            (단축키: 숫자 1 왼쪽의 ` 백틱 키)
+        </p>
+        <div style="display: flex; gap: 15px;">
+            <button class="play-btn" style="padding: 15px 30px; font-size: 20px;" onclick="startDevGame()">해당 설정으로 시작</button>
+            <button class="play-btn" style="padding: 15px 30px; font-size: 20px; background: #555;" onclick="closeDevMenu()">닫기</button>
+        </div>
+    </div>
+
+    <div id="joystick-container"><div id="joystick-stick"></div></div>
+
+    <div id="start-screen">
+        <div style="font-size: 60px; margin-bottom: 20px;">🌍</div>
+        <h1 style="font-size: 44px; margin-bottom: 5px; text-align: center;">지구 과학<br>서바이벌 EX+</h1>
+        <button class="play-btn" onclick="startGame(1, 1)">탐험 시작</button>
+        
+        <!-- 개발자 모드 진입 버튼 -->
+        <div style="position: absolute; bottom: 20px; right: 20px; font-size: 30px; cursor: pointer; opacity: 0.3;" onclick="openDevMenu()" title="개발자 모드">⚙️</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const modal = document.getElementById('modal');
+    
+    function resize() {
+        const w = window.innerWidth; const h = window.innerHeight; const ratio = 2/3; 
+        if (w / h > ratio) { canvas.height = h; canvas.width = h * ratio; } 
+        else { canvas.width = w; canvas.height = w / ratio; }
+    }
+    window.addEventListener('resize', resize); resize();
+
+    // PPT 내용 기반 퀴즈 뱅크
+    const quizBank = [
+        { q: "지구를 구성하는 요소들이 모여 상호작용하며 생성된 계는?", a: ["지구계", "태양계", "생태계", "우주계"], c: 0 },
+        { q: "구름은 액체 상태의 물 입자이지만 어느 권역으로 분류하나?", a: ["기권", "수권", "지권", "외권"], c: 0 },
+        { q: "구름의 생성은 기권과 어느 권역의 상호작용 결과인가?", a: ["수권", "지권", "생물권", "외권"], c: 0 },
+        { q: "지구의 자기장이 태양풍을 막아 생물권을 보호하는 것은 지권과 어디의 상호작용?", a: ["외권", "기권", "수권", "우주권"], c: 0 },
+        { q: "지구 내부 조사 방법 중 직접 파서 내려가는 방법은?", a: ["시추", "지진파 연구", "중력 측정", "운석 조사"], c: 0 },
+        { q: "지구 내부 구조 중 가장 큰 부피(80%)를 차지하는 층은?", a: ["맨틀", "지각", "외핵", "내핵"], c: 0 },
+        { q: "지구 내부 층 중 액체 상태인 유일한 층은?", a: ["외핵", "내핵", "맨틀", "지각"], c: 0 },
+        { q: "내핵은 외핵과 성분이 비슷하지만 왜 고체 상태인가?", a: ["압력이 높아서", "온도가 낮아서", "밀도가 작아서", "액체가 굳어서"], c: 0 },
+        { q: "해양 지각의 평균 두께는 약 몇 km인가?", a: ["5km", "35km", "100km", "2900km"], c: 0 },
+        { q: "대륙 지각을 구성하는 주요 암석은?", a: ["화강암질 암석", "현무암질 암석", "이암", "석회암"], c: 0 },
+        { q: "해양 지각을 구성하는 주요 암석은?", a: ["현무암질 암석", "화강암질 암석", "대리암", "규암"], c: 0 },
+        { q: "암석을 구성하는 주된 광물을 무엇이라 하나?", a: ["조암 광물", "금속 광물", "희토류", "보석"], c: 0 },
+        { q: "조암 광물 중 가장 밝은 색을 띠는 것은?", a: ["장석, 석영", "감람석, 휘석", "흑운모", "각섬석"], c: 0 },
+        { q: "흑운모의 겉보기 색과 조흔색은?", a: ["검은색 / 흰색", "검은색 / 검은색", "녹색 / 흰색", "갈색 / 황색"], c: 0 },
+        { q: "자철석의 겉보기 색과 조흔색은?", a: ["검은색 / 검은색", "검은색 / 흰색", "갈색 / 붉은색", "노란색 / 검은색"], c: 0 },
+        { q: "적철석을 조흔판에 긁었을 때 나타나는 색(조흔색)은?", a: ["적갈색", "검은색", "흰색", "황금색"], c: 0 },
+        { q: "광물의 무르고 단단한 정도를 무엇이라 하는가?", a: ["굳기", "강도", "자성", "밀도"], c: 0 },
+        { q: "방해석과 석영 중 굳기가 더 단단한 광물은?", a: ["석영", "방해석", "동일하다", "알 수 없다"], c: 0 },
+        { q: "방해석에 묽은 염산을 떨어뜨리면 어떤 기체가 발생하나?", a: ["이산화 탄소", "산소", "질소", "수소"], c: 0 },
+        { q: "쇠붙이를 끌어당기는 자성을 가진 광물은?", a: ["자철석", "방해석", "석영", "장석"], c: 0 },
+        { q: "지하 깊은 곳에서 마그마가 천천히 식어 결정이 크게 자란 암석은?", a: ["심성암", "화산암", "퇴적암", "변성암"], c: 0 },
+        { q: "지표로 분출된 마그마가 급격히 식어 결정이 작은 암석은?", a: ["화산암", "심성암", "이암", "편마암"], c: 0 },
+        { q: "현무암과 반려암 중 색깔이 더 밝은 것은?", a: ["둘 다 어둡다", "현무암", "반려암", "둘 다 밝다"], c: 0 },
+        { q: "화강암과 유문암 중 마그마의 냉각 속도가 더 느린 것은?", a: ["화강암", "유문암", "동일하다", "알 수 없다"], c: 0 },
+        { q: "반려암은 지하 깊은 곳에서 식었는가 지표에서 식었는가?", a: ["지하 깊은 곳", "지표면", "바닷속", "공중"], c: 0 },
+        { q: "유문암은 결정의 크기가 큰가 작은가?", a: ["작다", "크다", "중간이다", "없다"], c: 0 },
+        { q: "퇴적물이 다져지고 굳어지는 작용을 무엇이라 하나?", a: ["속성 작용", "변성 작용", "냉각 작용", "풍화 작용"], c: 0 },
+        { q: "퇴적암에서 나타나는 나란한 줄무늬는?", a: ["층리", "엽리", "단층", "절리"], c: 0 },
+        { q: "화석은 어떤 종류의 암석에서만 발견되나?", a: ["퇴적암", "화성암", "변성암", "심성암"], c: 0 },
+        { q: "자갈, 모래, 진흙이 섞여 만들어진 퇴적암은?", a: ["역암", "사암", "이암", "석회암"], c: 0 },
+        { q: "주로 진흙으로만 이루어진 입자가 매우 작은 퇴적암은?", a: ["이암", "사암", "역암", "석회암"], c: 0 },
+        { q: "주로 모래가 쌓여 만들어진 퇴적암은?", a: ["사암", "이암", "역암", "석회암"], c: 0 },
+        { q: "석회암에 묽은 염산을 떨어뜨리면 거품이 나는 이유는 무엇 때문인가?", a: ["탄산 칼슘 성분", "규소 성분", "산소 성분", "철 성분"], c: 0 },
+        { q: "암석이 열과 압력을 받아 성질이 변하는 현상은?", a: ["변성 작용", "속성 작용", "풍화 작용", "냉각 작용"], c: 0 },
+        { q: "변성암에서 압력의 수직 방향으로 광물이 배열되며 생긴 줄무늬는?", a: ["엽리", "층리", "단층", "습곡"], c: 0 },
+        { q: "석회암이 변성되어 만들어진 암석은?", a: ["대리암", "규암", "편마암", "이암"], c: 0 },
+        { q: "사암이 변성되어 만들어진 암석은?", a: ["규암", "대리암", "편마암", "이암"], c: 0 },
+        { q: "이암이나 화강암이 강한 변성 작용을 받아 생긴 암석은?", a: ["편마암", "대리암", "규암", "석회암"], c: 0 },
+        { q: "대리암에서도 묽은 염산 반응이 나타나는가?", a: ["네, 나타난다", "아니요", "색만 변한다", "녹아버린다"], c: 0 },
+        { q: "암석이 끊임없이 다른 암석으로 변하는 과정을 무엇이라 하나?", a: ["암석의 순환", "풍화", "침식", "운반"], c: 0 },
+        { q: "풍화 작용의 주된 에너지원은 무엇인가?", a: ["태양 에너지", "지구 내부 에너지", "핵 에너지", "전기 에너지"], c: 0 },
+        { q: "암석의 틈에 들어간 물이 얼어 암석이 부서지는 것은?", a: ["물리적 풍화", "화학적 풍화", "생물적 풍화", "열적 풍화"], c: 0 },
+        { q: "지하수에 의해 암석이 녹아 석회 동굴이 생기는 것은?", a: ["화학적 풍화", "물리적 풍화", "동결 작용", "압력 감소"], c: 0 },
+        { q: "토양의 생성 순서 중 가장 나중에 생기는 층은?", a: ["심토", "표토", "모질물", "기반암"], c: 0 },
+        { q: "토양의 생성 순서로 옳은 것은?", a: ["기반암-모질물-표토-심토", "표토-심토-모질물-기반암", "기반암-표토-심토-모질물", "심토-표토-기반암-모질물"], c: 0 },
+        { q: "풍화되지 않은 단단한 암석 층은?", a: ["기반암", "모질물", "표토", "심토"], c: 0 },
+        { q: "유기물이 많아 생물 활동이 활발한 토양 층은?", a: ["표토", "심토", "모질물", "기반암"], c: 0 },
+        { q: "마그마가 지하 깊은 곳에서 식으면 결정의 크기가 어떠한가?", a: ["크다", "작다", "없다", "일정하다"], c: 0 },
+        { q: "암석이 마그마로 변하려면 어떤 과정이 필요한가?", a: ["녹음(용융)", "다져짐", "변성", "풍화"], c: 0 },
+        { q: "적철석의 조흔색은 무슨 색인가?", a: ["적갈색", "검은색", "흰색", "노란색"], c: 0 }
+    ];
+
+    const abilities = [
+        { name: "🏹 멀티샷 (연속 발사)", type: "burst" },
+        { name: "✨ 화살 +1 (확산 발사)", type: "spread" },
+        { name: "⚡ 전광석화 (공속 UP)", type: "speed" },
+        { name: "🔥 응축 에너지 (데미지 UP)", type: "dmg" },
+        { name: "❤️ 생명력 강화 (최대 HP)", type: "hp" }
+    ];
+
+    let state = {
+        active: false, paused: false, stage: 1, lv: 1, exp: 0, maxExp: 100,
+        timer: 30, frameCount: 0, bossStage1: 10, bossStage2: 20, isClearTransition: false,
+        pendingRetry: false
+    };
+
+    const player = {
+        x: canvas.width/2, y: canvas.height/2, radius: 22, speed: 4.8,
+        hp: 100, maxHp: 100, attackCooldown: 0,
+        attackSpeed: 35, dmg: 25, burstCount: 1, spreadCount: 1, lastHitTime: 0,
+        invincibleTimer: 0, isMoving: false
+    };
+
+    let enemies = []; let bullets = []; let enemyBullets = []; let boss = null;
+    let magicZones = []; let quizPool = [];
+    const input = { x: 0, y: 0, active: false }; const keys = {};
+
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if (e.code === 'Backquote') openDevMenu();
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    const jStick = document.getElementById('joystick-stick');
+    const jContainer = document.getElementById('joystick-container');
+    if ('ontouchstart' in window) {
+        jContainer.style.display = 'block';
+        jContainer.addEventListener('touchstart', () => { if(!state.paused) input.active = true; });
+        jContainer.addEventListener('touchmove', e => {
+            const touch = e.touches[0]; const rect = jContainer.getBoundingClientRect();
+            const dx = touch.clientX - (rect.left + rect.width/2);
+            const dy = touch.clientY - (rect.top + rect.height/2);
+            const dist = Math.min(50, Math.sqrt(dx*dx + dy*dy)); const angle = Math.atan2(dy, dx);
+            input.x = Math.cos(angle) * (dist/50); input.y = Math.sin(angle) * (dist/50);
+            jStick.style.transform = `translate(${input.x*40}px, ${input.y*40}px)`;
+        });
+        jContainer.addEventListener('touchend', () => { input.active = false; input.x = 0; input.y = 0; jStick.style.transform = `translate(0, 0)`; });
+    }
+
+    function openDevMenu() { state.paused = true; document.getElementById('dev-screen').style.display = 'flex'; }
+    function closeDevMenu() { document.getElementById('dev-screen').style.display = 'none'; state.paused = false; }
+
+    function shuffleQuizAnswers() {
+        quizBank.forEach(quiz => {
+            const correctText = quiz.a[quiz.c];
+            for (let i = quiz.a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [quiz.a[i], quiz.a[j]] = [quiz.a[j], quiz.a[i]];
+            }
+            quiz.c = quiz.a.indexOf(correctText);
+        });
+    }
+
+    function startGame(startStage = 1, startLv = 1) {
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('fail-screen').style.display = 'none';
+        document.getElementById('dev-screen').style.display = 'none';
+        shuffleQuizAnswers();
+        
+        state.active = true; state.paused = false; state.stage = startStage; state.timer = 30; 
+        state.lv = startLv; state.exp = 0; state.maxExp = 150 + (state.lv * 100);
+        
+        player.maxHp = 100 + ((startLv - 1) * 50); player.hp = player.maxHp;
+        player.dmg = 25 + ((startLv - 1) * 20);
+        player.attackSpeed = Math.max(6, 35 - Math.floor((startLv - 1) / 2) * 5);
+        player.burstCount = 1 + Math.floor((startLv - 1) / 4);
+        player.spreadCount = 1 + Math.floor((startLv - 1) / 4);
+        player.invincibleTimer = 0;
+        
+        enemies = []; bullets = []; enemyBullets = []; boss = null; magicZones = [];
+        quizPool = quizBank.map((_, i) => i);
+        
+        if (state.stage === state.bossStage1 || state.stage === state.bossStage2) spawnBoss();
+        else { document.getElementById('boss-ui').style.display = 'none'; document.getElementById('timer-display').style.display = 'block'; }
+
+        updateUI(); animate();
+    }
+
+    function startDevGame() {
+        state.active = false;
+        setTimeout(() => {
+            const st = parseInt(document.getElementById('dev-stage').value) || 1;
+            const lv = parseInt(document.getElementById('dev-lv').value) || 1;
+            startGame(st, lv);
+        }, 50);
+    }
+
+    function startRetryQuiz() {
+        document.getElementById('fail-screen').style.display = 'none';
+        state.pendingRetry = true;
+        openQuiz(true, "부활 퀴즈 (정답 시 보스전 재개)");
+    }
+
+    function retryBoss() {
+        state.active = true; state.paused = false; state.timer = 30;
+        player.hp = player.maxHp;
+        enemies = []; bullets = []; enemyBullets = []; magicZones = []; boss = null;
+        spawnBoss();
+        updateUI();
+        requestAnimationFrame(animate);
+    }
+
+    function spawnEnemy() {
+        if (state.stage === state.bossStage1 || state.stage === state.bossStage2 || state.isClearTransition) return;
+        const maxEnemies = 12 + (state.stage * 3);
+        if (enemies.length >= maxEnemies) return;
+        const edge = Math.floor(Math.random() * 4); let x, y;
+        if (edge === 0) { x = Math.random() * canvas.width; y = -50; }
+        else if (edge === 1) { x = canvas.width + 50; y = Math.random() * canvas.height; }
+        else if (edge === 2) { x = Math.random() * canvas.width; y = canvas.height + 50; }
+        else { x = -50; y = Math.random() * canvas.height; }
+
+        let type = 'normal'; const rand = Math.random();
+        if (state.stage >= 16 && rand > 0.85) type = 'shield';
+        else if (state.stage >= 11 && rand > 0.7) type = 'mage';
+        else if (state.stage >= 5 && rand > 0.75) type = 'shooter';
+        else if (state.stage >= 2 && rand > 0.85) type = 'fast';
+
+        const baseHp = state.stage === 1 ? 75 : 75 + (state.stage * 15) + (Math.pow(state.stage, 1.7) * 4);
+        const baseSpeed = Math.min(4.4, (1.2 + Math.random() * 1.0) + (state.stage * 0.15));
+
+        enemies.push({
+            x, y, 
+            hp: type === 'shield' ? baseHp * 5 : (type === 'fast' ? baseHp * 0.5 : (type === 'shooter' ? baseHp * 0.85 : baseHp)), 
+            maxHp: type === 'shield' ? baseHp * 5 : (type === 'fast' ? baseHp * 0.5 : (type === 'shooter' ? baseHp * 0.85 : baseHp)),
+            radius: type === 'shield' ? 32 : (type === 'shooter' ? 26 : (type === 'fast' ? 16 : 22)),
+            speed: type === 'shield' ? baseSpeed * 0.4 : (type === 'fast' ? baseSpeed * 1.6 : (type === 'shooter' ? baseSpeed * 0.7 : baseSpeed)),
+            color: type === 'shield' ? '#7f8c8d' : (type === 'mage' ? '#2980b9' : (type === 'shooter' ? '#9b59b6' : (type === 'fast' ? '#e67e22' : '#c0392b'))),
+            type, blink: 0, shootCooldown: Math.random() * 60
+        });
+    }
+
+    function spawnBoss() {
+        if (state.stage === state.bossStage1) {
+            // 10스테이지 보스 체력 20% 상향 (기존 75,000 + lv*10,000 에서 90,000 + lv*12,000 으로 변경)
+            const bossHp = 90000 + (state.lv * 12000);
+            boss = { x: canvas.width / 2, y: -100, targetY: 150, radius: 75, hp: bossHp, maxHp: bossHp, color: '#ff4757', attackCooldown: 0, blink: 0, moveDir: 1, moveTimer: 0, pattern: 0 };
+            document.getElementById('boss-name').innerText = "지구의 핵 - 진동하는 파괴자";
+        } else if (state.stage === state.bossStage2) {
+            const bossHp = 575000 + (state.lv * 60000);
+            boss = { x: canvas.width / 2, y: -100, targetY: 150, radius: 90, hp: bossHp, maxHp: bossHp, color: '#2c3e50', attackCooldown: 0, blink: 0, moveDir: 1, moveTimer: 0, pattern: 0 };
+            document.getElementById('boss-name').innerText = "지구의 심장 - 최종 심판자";
+        }
+        document.getElementById('boss-ui').style.display = 'flex';
+        document.getElementById('timer-display').style.display = 'none';
+    }
+
+    function showStageClear() {
+        state.isClearTransition = true;
+        boss = null; // 중요: 11스테이지 진입 전 남은 보스 유령 데이터 확실히 제거
+        enemies = []; bullets = []; enemyBullets = []; magicZones = [];
+        document.getElementById('clear-screen').style.display = 'flex';
+        const healAmt = player.maxHp * 0.2;
+        player.hp = Math.min(player.maxHp, player.hp + healAmt);
+        document.getElementById('clear-heal-msg').innerText = `✨ 탐험 성과 보너스: 체력 20% 회복! (+${Math.round(healAmt)})`;
+    }
+
+    function goToNextStage() {
+        document.getElementById('clear-screen').style.display = 'none';
+        openQuiz(false); 
+    }
+
+    function proceedAfterQuiz() {
+        state.isClearTransition = false;
+        state.stage++; 
+        state.timer = 30; // 다음 스테이지도 타이머 30초 복구
+        boss = null; // 방어 코드: 일반 스테이지 진입 전 확실한 보스 제거
+        
+        if (state.stage === state.bossStage1 || state.stage === state.bossStage2) spawnBoss();
+        else {
+            document.getElementById('boss-ui').style.display = 'none';
+            document.getElementById('timer-display').style.display = 'block';
+        }
+        player.invincibleTimer = 30; 
+        updateUI();
+    }
+
+    function drawPlayer() {
+        ctx.save(); ctx.translate(player.x, player.y);
+        const isHit = Date.now() - player.lastHitTime < 100;
+        const isInvincible = player.invincibleTimer > 0 && Math.floor(state.frameCount / 2) % 2 === 0;
+        ctx.fillStyle = isHit ? '#ff0000' : (isInvincible ? 'rgba(241, 196, 15, 0.5)' : '#f1c40f'); 
+        ctx.beginPath(); ctx.arc(0, 0, player.radius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#000';
+        if (player.isMoving) { ctx.fillRect(-10, -5, 4, 10); ctx.fillRect(6, -5, 4, 10); } 
+        else { ctx.beginPath(); ctx.arc(-8, -4, 3, 0, Math.PI*2); ctx.arc(8, -4, 3, 0, Math.PI*2); ctx.fill(); }
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.beginPath();
+        if (player.hp < 30) ctx.arc(0, 12, 5, Math.PI, 0); else ctx.arc(0, 5, 6, 0.2, Math.PI - 0.2); ctx.stroke();
+        ctx.restore();
+    }
+
+    function drawEnemy(en) {
+        ctx.save(); ctx.translate(en.x, en.y);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(0, en.radius + 5, en.radius * 0.8, 5, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = en.blink > 0 ? '#fff' : en.color; 
+        if (en.type === 'fast') { ctx.beginPath(); ctx.moveTo(0, -en.radius); ctx.lineTo(en.radius, en.radius); ctx.lineTo(-en.radius, en.radius); ctx.fill(); } 
+        else if (en.type === 'shooter' || en.type === 'mage') {
+            ctx.beginPath(); for(let i=0; i<6; i++) { const ang = (Math.PI*2/6)*i; ctx.lineTo(Math.cos(ang)*en.radius, Math.sin(ang)*en.radius); } ctx.fill();
+            if (en.type === 'mage') { ctx.fillStyle = '#2c3e50'; ctx.beginPath(); ctx.moveTo(-en.radius, -en.radius/2); ctx.lineTo(0, -en.radius*1.8); ctx.lineTo(en.radius, -en.radius/2); ctx.fill(); }
+        } else if (en.type === 'shield') { ctx.fillRect(-en.radius, -en.radius, en.radius*2, en.radius*2); ctx.fillStyle = '#34495e'; ctx.fillRect(-en.radius + 5, -en.radius + 5, 10, en.radius*2 - 10); } 
+        else { ctx.beginPath(); ctx.arc(0, 0, en.radius, 0, Math.PI*2); ctx.fill(); }
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -4, 4, 0, Math.PI*2); ctx.arc(6, -4, 4, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-6, -4, 2, 0, Math.PI*2); ctx.arc(6, -4, 2, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(-2, -6); ctx.moveTo(10, -10); ctx.lineTo(2, -6); ctx.stroke();
+        ctx.restore(); if (en.blink > 0) en.blink--;
+    }
+
+    function drawBoss() {
+        if (!boss) return;
+        ctx.save(); ctx.translate(boss.x, boss.y);
+        ctx.fillStyle = boss.blink > 0 ? '#fff' : boss.color; ctx.shadowBlur = 30; ctx.shadowColor = boss.color;
+        ctx.beginPath(); ctx.arc(0, 0, boss.radius, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(-25, -15, 15, 22, 0, 0, Math.PI*2); ctx.ellipse(25, -15, 15, 22, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-25, -10, 8, 0, Math.PI*2); ctx.arc(25, -10, 8, 0, Math.PI*2); ctx.fill();
+        ctx.restore(); if (boss.blink > 0) boss.blink--;
+    }
+
+    function openQuiz(isLevelUp = true, customTitle = null) {
+        state.paused = true; input.active = false;
+        if (quizPool.length === 0) quizPool = quizBank.map((_, i) => i);
+        const poolIndex = Math.floor(Math.random() * quizPool.length);
+        const quizIndex = quizPool.splice(poolIndex, 1)[0];
+        const quiz = quizBank[quizIndex];
+
+        document.getElementById('modal-title').innerText = customTitle || (isLevelUp ? "레벨업! 지식 강화" : `스테이지 ${state.stage} 클리어 퀴즈`);
+        document.getElementById('modal-desc').innerText = quiz.q;
+        const opts = document.getElementById('modal-options'); opts.innerHTML = '';
+        quiz.a.forEach((txt, i) => {
+            const btn = document.createElement('button'); btn.className = 'option-btn'; btn.innerText = txt;
+            btn.onclick = () => { handleQuizResult(i === quiz.c, isLevelUp); };
+            opts.appendChild(btn);
+        });
+        modal.style.display = 'block';
+    }
+
+    function handleQuizResult(correct, isLevelUp) {
+        modal.style.display = 'none';
+        if (state.pendingRetry) {
+            state.pendingRetry = false;
+            if (correct) { retryBoss(); } 
+            else { alert("재도전 퀴즈 실패! 처음부터 다시 시작합니다."); location.reload(); }
+            return;
+        }
+        if (correct) openAbilitySelection(isLevelUp);
+        else handlePenalty(isLevelUp);
+    }
+
+    function handlePenalty(isLevelUp) {
+        state.paused = false; player.hp -= 25; player.invincibleTimer = 30;
+        updateUI(); if (player.hp <= 0) endGame(); if (!isLevelUp) proceedAfterQuiz(); 
+    }
+
+    function openAbilitySelection(isLevelUp) {
+        document.getElementById('modal-title').innerText = "능력 선택"; document.getElementById('modal-desc').innerText = "정답입니다! 강화를 선택하세요.";
+        const opts = document.getElementById('modal-options'); opts.innerHTML = '';
+        const shuffled = abilities.sort(() => 0.5 - Math.random()).slice(0, 3);
+        shuffled.forEach(ab => {
+            const btn = document.createElement('button'); btn.className = 'option-btn'; btn.innerText = ab.name;
+            btn.onclick = () => {
+                if (ab.type === 'burst') player.burstCount++;
+                if (ab.type === 'spread') player.spreadCount++;
+                if (ab.type === 'speed') player.attackSpeed = Math.max(6, player.attackSpeed - 5);
+                if (ab.type === 'dmg') player.dmg += 20;
+                if (ab.type === 'hp') { player.maxHp += 50; player.hp = player.maxHp; }
+                modal.style.display = 'none'; state.paused = false; player.invincibleTimer = 30;
+                updateUI(); if (!isLevelUp) proceedAfterQuiz();
+            };
+            opts.appendChild(btn);
+        });
+        modal.style.display = 'block';
+    }
+
+    function updateUI() {
+        document.getElementById('stage-num').innerText = state.stage; document.getElementById('lv-num').innerText = state.lv;
+        document.getElementById('timer-display').innerText = Math.max(0, state.timer).toFixed(1);
+        document.getElementById('hp-bar-inner').style.width = (player.hp / player.maxHp * 100) + '%';
+        document.getElementById('exp-bar-inner').style.width = (state.exp / state.maxExp * 100) + '%';
+        if (boss) document.getElementById('boss-hp-inner').style.width = (boss.hp / boss.maxHp * 100) + '%';
+    }
+
+    function endGame(win = false) {
+        state.active = false;
+        if (win) { alert("지구 정복 성공!"); location.reload(); } 
+        else {
+            document.getElementById('fail-screen').style.display = 'flex';
+            const retryBtn = document.getElementById('boss-retry-btn');
+            if (state.stage === state.bossStage1 || state.stage === state.bossStage2) retryBtn.style.display = 'block';
+            else retryBtn.style.display = 'none';
+        }
+    }
+
+    function fireBullets() {
+        let target = boss || (enemies.length > 0 ? enemies.reduce((prev, curr) => 
+            Math.sqrt((curr.x-player.x)**2+(curr.y-player.y)**2) < Math.sqrt((prev.x-player.x)**2+(prev.y-player.y)**2) ? curr : prev) : null);
+        if (!target) return;
+        const baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
+        for (let b = 0; b < player.burstCount; b++) {
+            setTimeout(() => {
+                if (!state.active || state.paused) return;
+                for (let s = 0; s < player.spreadCount; s++) {
+                    const offset = (s - (player.spreadCount - 1) / 2) * 0.22;
+                    bullets.push({ x: player.x, y: player.y, vx: Math.cos(baseAngle + offset) * 11, vy: Math.sin(baseAngle + offset) * 11, dmg: player.dmg });
+                }
+            }, b * 110);
+        }
+    }
+
+    function animate() {
+        if (!state.active) return;
+        if (state.paused || state.isClearTransition) { requestAnimationFrame(animate); return; }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (player.invincibleTimer > 0) player.invincibleTimer--;
+
+        // 타이머 로직
+        const isBossLevel = (state.stage === state.bossStage1 || state.stage === state.bossStage2);
+        if (!isBossLevel && !state.isClearTransition) { 
+            state.timer -= 1/60; 
+            if (state.timer <= 0) { 
+                state.timer = 0;
+                showStageClear(); 
+            } 
+        }
+
+        let mx = 0, my = 0;
+        if (keys['KeyW'] || keys['ArrowUp']) my = -1; if (keys['KeyS'] || keys['ArrowDown']) my = 1;
+        if (keys['KeyA'] || keys['ArrowLeft']) mx = -1; if (keys['KeyD'] || keys['ArrowRight']) mx = 1;
+        if (input.active) { mx = input.x; my = input.y; }
+        if (mx !== 0 || my !== 0) {
+            player.x += mx * player.speed; player.y += my * player.speed; player.isMoving = true;
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+        } else { player.isMoving = false; }
+        drawPlayer();
+
+        magicZones.forEach((mz, idx) => {
+            ctx.beginPath(); ctx.arc(mz.x, mz.y, mz.radius, 0, Math.PI*2);
+            ctx.fillStyle = mz.timer > 20 ? `rgba(231, 76, 60, ${0.1 + (60-mz.timer)/60})` : 'rgba(231, 76, 60, 0.7)';
+            ctx.fill(); mz.timer--;
+            if (mz.timer === 0) {
+                if (Math.sqrt((player.x-mz.x)**2 + (player.y-mz.y)**2) < player.radius + mz.radius && player.invincibleTimer <= 0) {
+                    player.hp -= 25; player.lastHitTime = Date.now(); if (player.hp <= 0) endGame();
+                }
+                magicZones.splice(idx, 1);
+            }
+        });
+
+        if (!isBossLevel) {
+            if (state.frameCount % (Math.max(10, 42 - state.stage * 2)) === 0) spawnEnemy();
+            enemies.forEach((en, idx) => {
+                const dx = player.x - en.x, dy = player.y - en.y, dist = Math.sqrt(dx*dx + dy*dy);
+                en.x += (dx/dist) * en.speed; en.y += (dy/dist) * en.speed;
+                drawEnemy(en);
+                if (en.type === 'shooter' || en.type === 'mage') {
+                    en.shootCooldown++;
+                    if (en.shootCooldown > (en.type === 'mage' ? 130 : 90)) {
+                        if (en.type === 'mage') magicZones.push({ x: player.x, y: player.y, radius: 85, timer: 65 });
+                        else enemyBullets.push({ x: en.x, y: en.y, vx: (dx/dist)*6, vy: (dy/dist)*6, radius: 7, bounces: 0 });
+                        en.shootCooldown = 0;
+                    }
+                }
+                if (dist < player.radius + en.radius && player.invincibleTimer <= 0) {
+                    player.hp -= (en.type === 'shield' ? 2.0 : 1.0); player.lastHitTime = Date.now(); if (player.hp <= 0) endGame();
+                }
+            });
+        } else if (boss) {
+            if (boss.y < boss.targetY) boss.y += 2;
+            else {
+                boss.moveTimer += 0.02; boss.x = canvas.width / 2 + Math.sin(boss.moveTimer) * (canvas.width * 0.35);
+                boss.attackCooldown++;
+                if (boss.attackCooldown % (state.stage === 20 ? 100 : 150) === 0) boss.pattern = Math.floor(Math.random() * (state.stage === 20 ? 4 : 3));
+                if (boss.attackCooldown % (state.stage === 20 ? 25 : 40) === 0) {
+                    if (boss.pattern === 0) {
+                        for(let i=0; i<20; i++) { const ang = (Math.PI*2/20)*i; enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(ang)*6, vy: Math.sin(ang)*6, radius: 10, bounces: 0 }); }
+                    } else if (boss.pattern === 1) {
+                        for(let i=0; i<6; i++) { const ang = (Math.PI*2/6)*i; enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(ang)*5, vy: Math.sin(ang)*5, radius: 11, bounces: 3 }); }
+                    } else if (boss.pattern === 2) {
+                        const ang = Math.atan2(player.y-boss.y, player.x-boss.x); enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(ang)*11, vy: Math.sin(ang)*11, radius: 13, bounces: 0 });
+                    } else if (boss.pattern === 3) {
+                        magicZones.push({ x: player.x, y: player.y, radius: 120, timer: 50 });
+                    }
+                }
+            }
+            drawBoss();
+        }
+
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            const eb = enemyBullets[i]; eb.x += eb.vx; eb.y += eb.vy;
+            if (eb.bounces > 0) {
+                if (eb.x < 0 || eb.x > canvas.width) { eb.vx *= -1; eb.bounces--; }
+                if (eb.y < 0 || eb.y > canvas.height) { eb.vy *= -1; eb.bounces--; }
+            }
+            ctx.fillStyle = eb.bounces > 0 ? '#ffeb3b' : '#ff4757'; ctx.beginPath(); ctx.arc(eb.x, eb.y, eb.radius, 0, Math.PI*2); ctx.fill();
+            if (Math.sqrt((eb.x-player.x)**2 + (eb.y-player.y)**2) < player.radius + eb.radius && player.invincibleTimer <= 0) {
+                player.hp -= 20; player.lastHitTime = Date.now(); enemyBullets.splice(i, 1); if (player.hp <= 0) endGame();
+            } else if (eb.x < -100 || eb.x > canvas.width+100 || eb.y < -100 || eb.y > canvas.height+100) enemyBullets.splice(i, 1);
+        }
+
+        player.attackCooldown++; if (player.attackCooldown >= player.attackSpeed) { fireBullets(); player.attackCooldown = 0; }
+
+        bullets.forEach((b, idx) => {
+            b.x += b.vx; b.y += b.vy; ctx.fillStyle = '#3498db'; ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill();
+            if (boss && Math.sqrt((b.x-boss.x)**2 + (b.y-boss.y)**2) < boss.radius+6) {
+                boss.hp -= b.dmg; boss.blink = 3; bullets.splice(idx, 1);
+                if (boss.hp <= 0) { 
+                    boss = null; // 중요: 보스가 파괴되면 즉시 데이터를 소거하여 다음 스테이지 진입 시 타겟팅 되는 오류 원천 차단
+                    if (state.stage === state.bossStage2) endGame(true); else showStageClear(); 
+                }
+            }
+            enemies.forEach((en, eIdx) => {
+                if (Math.sqrt((b.x-en.x)**2 + (b.y-en.y)**2) < en.radius+6) {
+                    en.hp -= b.dmg; en.blink = 3; bullets.splice(idx, 1);
+                    if (en.hp <= 0) {
+                        enemies.splice(eIdx, 1); state.exp += 35;
+                        if (state.exp >= state.maxExp) { state.lv++; state.exp = 0; state.maxExp = 150 + (state.lv * 100); openQuiz(true); }
+                    }
+                }
+            });
+            if (b.x < -20 || b.x > canvas.width+20 || b.y < -20 || b.y > canvas.height+20) bullets.splice(idx, 1);
+        });
+        state.frameCount++; updateUI(); requestAnimationFrame(animate);
+    }
+</script>
+</body>
+</html>
